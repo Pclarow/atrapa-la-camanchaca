@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrapa la Camanchaca · Hecho en Chile</title>
+<meta name="description" content="Experiencia interactiva con MediaPipe: tu mano es un atrapanieblas que convierte la camanchaca en agua. Concurso Chile Re-Descubre.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,800&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{ --ink:#f4efe6; --dim:#c9c2b4; --water:#6fd3ff; --sand:#c98b4a; }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:#0d1622;color:var(--ink);font-family:'Inter',system-ui,sans-serif;overflow:hidden}
+  canvas#scene{position:fixed;inset:0;width:100vw;height:100vh;display:block}
+  video{display:none}
+
+  /* Vista de la cámara con el esqueleto de la mano */
+  #cam{position:fixed;right:18px;bottom:18px;width:200px;height:150px;border-radius:12px;border:1px solid rgba(255,255,255,.25);background:#000;box-shadow:0 10px 30px rgba(0,0,0,.5)}
+  #camLabel{position:fixed;right:18px;bottom:174px;font-size:11px;letter-spacing:.14em;color:var(--dim)}
+
+  /* Marcador de litros */
+  #hud{position:fixed;top:22px;right:24px;text-align:right}
+  #liters{font-family:'Fraunces',serif;font-weight:800;font-size:44px;line-height:1;color:var(--water);text-shadow:0 0 24px rgba(111,211,255,.45)}
+  #hud small{display:block;margin-top:6px;font-size:12px;letter-spacing:.14em;color:var(--dim)}
+
+  /* Título */
+  #title{position:fixed;top:22px;left:26px}
+  #title p{margin:0 0 6px;font-size:12px;letter-spacing:.22em;color:var(--sand);font-weight:600}
+  #title h1{margin:0;font-family:'Fraunces',serif;font-weight:800;font-size:clamp(26px,3.4vw,44px);line-height:1}
+
+  /* Relato */
+  #story{position:fixed;left:26px;bottom:26px;max-width:min(520px,60vw);background:rgba(10,18,28,.72);backdrop-filter:blur(8px);border:1px solid rgba(255,255,255,.12);border-radius:16px;padding:18px 20px;transition:opacity .6s ease, transform .6s ease}
+  #story.hide{opacity:0;transform:translateY(10px)}
+  #story .k{font-size:11px;letter-spacing:.2em;color:var(--water);font-weight:600;margin-bottom:8px}
+  #story h2{margin:0 0 8px;font-family:'Fraunces',serif;font-size:24px;line-height:1.15}
+  #story p{margin:0;color:var(--dim);font-size:15px;line-height:1.55}
+
+  /* Pantalla de inicio */
+  #start{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:radial-gradient(circle at 50% 40%, rgba(13,22,34,.6), rgba(13,22,34,.95));z-index:5}
+  #start .box{max-width:560px;text-align:center;padding:24px}
+  #start p.k{font-size:12px;letter-spacing:.24em;color:var(--sand);font-weight:600;margin:0 0 14px}
+  #start h1{font-family:'Fraunces',serif;font-weight:800;font-size:clamp(40px,7vw,72px);margin:0 0 16px;line-height:.95}
+  #start p{color:var(--dim);font-size:16px;line-height:1.6;margin:0 0 26px}
+  button{font:inherit;font-weight:600;font-size:16px;border:0;border-radius:999px;padding:14px 28px;cursor:pointer;background:var(--water);color:#06202e}
+  button:hover{filter:brightness(1.08)}
+  #status{margin-top:14px;font-size:13px;color:var(--dim);min-height:18px}
+  .hint{position:fixed;left:50%;top:22px;transform:translateX(-50%);font-size:13px;color:var(--dim);background:rgba(10,18,28,.6);padding:8px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.1)}
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<video id="video" playsinline muted></video>
+
+<div id="title"><p>HECHO EN CHILE · CHILE RE-DESCUBRE</p><h1>Atrapa la Camanchaca</h1></div>
+<div id="hud"><div id="liters">0 L</div><small>DE AGUA DE NIEBLA</small></div>
+<div class="hint" id="hint">Levanta tu mano abierta frente a la cámara</div>
+
+<div id="story" class="hide"><div class="k" id="sk"></div><h2 id="sh"></h2><p id="sp"></p></div>
+
+<canvas id="cam" width="200" height="150"></canvas>
+<div id="camLabel">TU MANO</div>
+
+<div id="start">
+  <div class="box">
+    <p class="k">UN INVENTO CHILENO</p>
+    <h1>Atrapa la<br>Camanchaca</h1>
+    <p>En el desierto de Atacama casi no llueve, pero desde el mar llega una niebla cargada de agua. Levanta tu mano abierta frente a la cámara: <b>tu mano será la malla que la atrapa.</b></p>
+    <button id="go">Comenzar</button>
+    <div id="status">Necesita cámara · funciona en Chrome</div>
+  </div>
+</div>
+
+<script type="module">
+/* =========================================================
+   ATRAPA LA CAMANCHACA
+   MediaPipe Hand Landmarker controla la posición de la malla.
+   Si no hay cámara, la malla sigue al mouse.
+   ========================================================= */
+const MP = "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14";
+
+const $ = id => document.getElementById(id);
+const cv = $('scene'), g = cv.getContext('2d');
+const cam = $('cam'), gc = cam.getContext('2d');
+const video = $('video');
+let W = 0, H = 0, DPR = Math.min(2, window.devicePixelRatio || 1);
+function resize(){ W = innerWidth; H = innerHeight; cv.width = W * DPR; cv.height = H * DPR; g.setTransform(DPR,0,0,DPR,0,0); }
+addEventListener('resize', resize); resize();
+
+/* ---------- Relato (datos del hito) ---------- */
+const META = 15000;   // litros: promedio diario que recibió Chungungo con agua de niebla
+const STORY = [
+  { at: 0,     k:'ANTOFAGASTA · AÑOS 60', h:'El desierto más árido del mundo', p:'En el norte de Chile casi no llueve. Pero desde el mar llega la camanchaca: una niebla espesa, hecha de millones de gotitas de agua.' },
+  { at: 0.18,  k:'EL INVENTOR', h:'Carlos Espinosa Arancibia', p:'Frente a la sequía de Antofagasta, este físico chileno ideó una malla vertical que intercepta la niebla empujada por el viento.' },
+  { at: 0.40,  k:'CÓMO FUNCIONA', h:'De niebla a gota, de gota a estanque', p:'Las gotitas chocan con la malla, se juntan y caen por gravedad a una canaleta que las lleva a un estanque. Un metro cuadrado de malla puede captar entre 3 y 10 litros al día.' },
+  { at: 0.65,  k:'UN REGALO AL MUNDO', h:'Una patente para todos', p:'Espinosa donó su patente a la UNESCO para que cualquiera pudiera usarla. Hoy hay atrapanieblas en Perú, Marruecos, España y Nepal.' },
+  { at: 1.00,  k:'CHUNGUNGO · 1992', h:'Agua que viene de las nubes', p:'Este pueblo de pescadores de la Región de Coquimbo pasó del camión aljibe a tener agua de niebla en cada casa: en promedio, unos 15.000 litros al día. Hecho en Chile.' },
+];
+let storyIdx = -1;
+function showStory(i){
+  if (i === storyIdx) return; storyIdx = i;
+  const s = STORY[i], box = $('story');
+  box.classList.add('hide');
+  setTimeout(() => { $('sk').textContent = s.k; $('sh').textContent = s.h; $('sp').textContent = s.p; box.classList.remove('hide'); }, 350);
+}
+
+/* ---------- Estado ---------- */
+const net = { x: 0.62, y: 0.42, w: 0.2, h: 0.26, tx: 0.62, ty: 0.42, seen: false };
+let fog = [], drops = [], splashes = [];
+let liters = 0, shown = 0, done = false, running = false, last = 0, lastHand = 0;
+const mouse = { x: null, y: null };
+addEventListener('pointermove', e => { mouse.x = e.clientX / W; mouse.y = e.clientY / H; });
+
+/* ---------- Audio: viento + gotas ---------- */
+let actx, wind, windGain;
+function startAudio(){
+  actx = new (window.AudioContext || window.webkitAudioContext)();
+  const len = actx.sampleRate * 2, buf = actx.createBuffer(1, len, actx.sampleRate), d = buf.getChannelData(0);
+  let b = 0; for (let i = 0; i < len; i++){ b = (b + 0.02 * (Math.random() * 2 - 1)) / 1.02; d[i] = b * 3.5; }
+  wind = actx.createBufferSource(); wind.buffer = buf; wind.loop = true;
+  const lp = actx.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 500;
+  windGain = actx.createGain(); windGain.gain.value = 0.25;
+  wind.connect(lp); lp.connect(windGain); windGain.connect(actx.destination); wind.start();
+}
+let lastPlink = 0;
+function plink(){
+  if (!actx || actx.currentTime - lastPlink < 0.07) return; lastPlink = actx.currentTime;
+  const o = actx.createOscillator(), gg = actx.createGain(), t = actx.currentTime;
+  o.type = 'sine'; const f = 900 + Math.random() * 900;
+  o.frequency.setValueAtTime(f, t); o.frequency.exponentialRampToValueAtTime(f * 0.55, t + 0.12);
+  gg.gain.setValueAtTime(0.0001, t); gg.gain.exponentialRampToValueAtTime(0.08, t + 0.01); gg.gain.exponentialRampToValueAtTime(0.0001, t + 0.18);
+  o.connect(gg); gg.connect(actx.destination); o.start(t); o.stop(t + 0.2);
+}
+function chime(){
+  if (!actx) return; const t = actx.currentTime;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f, i) => {
+    const o = actx.createOscillator(), gg = actx.createGain(); o.type = 'triangle'; o.frequency.value = f;
+    gg.gain.setValueAtTime(0.0001, t + i * 0.12); gg.gain.exponentialRampToValueAtTime(0.09, t + i * 0.12 + 0.02); gg.gain.exponentialRampToValueAtTime(0.0001, t + i * 0.12 + 1.2);
+    o.connect(gg); gg.connect(actx.destination); o.start(t + i * 0.12); o.stop(t + i * 0.12 + 1.3);
+  });
+}
+
+/* ---------- MediaPipe ---------- */
+let landmarker = null;
+async function startHands(){
+  const { FilesetResolver, HandLandmarker } = await import(MP);
+  const files = await FilesetResolver.forVisionTasks(MP + "/wasm");
+  landmarker = await HandLandmarker.createFromOptions(files, {
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: "GPU" },
+    runningMode: "VIDEO", numHands: 1
+  });
+  const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
+  video.srcObject = stream; await video.play();
+}
+const HAND_LINKS = [[0,1],[1,2],[2,3],[3,4],[0,5],[5,6],[6,7],[7,8],[5,9],[9,10],[10,11],[11,12],[9,13],[13,14],[14,15],[15,16],[13,17],[17,18],[18,19],[19,20],[0,17]];
+let lastVideoTime = -1;
+function trackHand(now){
+  if (!landmarker || video.readyState < 2) return;
+  // vista previa en espejo
+  gc.save(); gc.translate(cam.width, 0); gc.scale(-1, 1); gc.drawImage(video, 0, 0, cam.width, cam.height); gc.restore();
+  gc.fillStyle = 'rgba(13,22,34,.35)'; gc.fillRect(0, 0, cam.width, cam.height);
+  if (video.currentTime === lastVideoTime) return; lastVideoTime = video.currentTime;
+  const res = landmarker.detectForVideo(video, now);
+  const lm = res.landmarks && res.landmarks[0];
+  if (lm){
+    // centro de la palma (muñeca + nudillos), en espejo
+    const ids = [0, 5, 9, 13, 17]; let cx = 0, cy = 0;
+    ids.forEach(i => { cx += lm[i].x; cy += lm[i].y; }); cx /= ids.length; cy /= ids.length;
+    net.tx = 1 - cx; net.ty = cy; net.seen = true; lastHand = now;
+    // dibujar esqueleto en la vista previa
+    gc.strokeStyle = '#6fd3ff'; gc.lineWidth = 2;
+    HAND_LINKS.forEach(([a, b]) => { gc.beginPath(); gc.moveTo((1 - lm[a].x) * cam.width, lm[a].y * cam.height); gc.lineTo((1 - lm[b].x) * cam.width, lm[b].y * cam.height); gc.stroke(); });
+    gc.fillStyle = '#f4efe6'; lm.forEach(p => { gc.beginPath(); gc.arc((1 - p.x) * cam.width, p.y * cam.height, 2.5, 0, 7); gc.fill(); });
+  }
+}
+
+/* ---------- Escena ---------- */
+function spawnFog(){
+  const r = 18 + Math.random() * 34;
+  fog.push({ x: -r, y: H * (0.18 + Math.random() * 0.55), r, vx: 0.6 + Math.random() * 1.1, vy: (Math.random() - 0.5) * 0.15, a: 0.10 + Math.random() * 0.14, ph: Math.random() * 6 });
+}
+function hills(){
+  // cielo
+  const sky = g.createLinearGradient(0, 0, 0, H);
+  sky.addColorStop(0, '#0d1a2b'); sky.addColorStop(0.55, '#1f3346'); sky.addColorStop(1, '#3b3a3a');
+  g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  // mar a la izquierda
+  g.fillStyle = '#123247'; g.beginPath(); g.moveTo(0, H * 0.74); g.lineTo(W * 0.3, H * 0.74); g.lineTo(W * 0.3, H); g.lineTo(0, H); g.fill();
+  g.strokeStyle = 'rgba(111,211,255,.15)'; g.lineWidth = 1;
+  for (let i = 0; i < 5; i++){ g.beginPath(); g.moveTo(0, H * (0.77 + i * 0.045)); g.lineTo(W * 0.28, H * (0.77 + i * 0.045)); g.stroke(); }
+  // cerros del desierto
+  g.fillStyle = '#5a3b24'; g.beginPath(); g.moveTo(W * 0.18, H);
+  g.bezierCurveTo(W * 0.32, H * 0.62, W * 0.48, H * 0.66, W * 0.6, H * 0.7);
+  g.bezierCurveTo(W * 0.75, H * 0.74, W * 0.86, H * 0.6, W, H * 0.64); g.lineTo(W, H); g.fill();
+  g.fillStyle = '#7a5130'; g.beginPath(); g.moveTo(W * 0.26, H);
+  g.bezierCurveTo(W * 0.42, H * 0.78, W * 0.62, H * 0.8, W * 0.78, H * 0.84);
+  g.bezierCurveTo(W * 0.9, H * 0.86, W * 0.96, H * 0.8, W, H * 0.82); g.lineTo(W, H); g.fill();
+}
+function netRect(){ const w = W * net.w, h = H * net.h; return { x: W * net.x - w / 2, y: H * net.y - h / 2, w, h }; }
+function drawNet(t){
+  const r = netRect();
+  // postes
+  g.strokeStyle = '#2b2b2b'; g.lineWidth = 6; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(r.x, r.y - 8); g.lineTo(r.x, r.y + r.h + 26); g.moveTo(r.x + r.w, r.y - 8); g.lineTo(r.x + r.w, r.y + r.h + 26); g.stroke();
+  // malla Raschel
+  g.fillStyle = net.seen ? 'rgba(25,40,52,.55)' : 'rgba(25,40,52,.35)'; g.fillRect(r.x, r.y, r.w, r.h);
+  g.strokeStyle = 'rgba(244,239,230,.35)'; g.lineWidth = 1;
+  const step = 9;
+  for (let x = r.x; x <= r.x + r.w; x += step){ g.beginPath(); g.moveTo(x, r.y); g.lineTo(x + Math.sin(t / 900 + x) * 1.5, r.y + r.h); g.stroke(); }
+  for (let y = r.y; y <= r.y + r.h; y += step){ g.beginPath(); g.moveTo(r.x, y); g.lineTo(r.x + r.w, y); g.stroke(); }
+  // canaleta
+  g.fillStyle = '#9aa3a8'; g.fillRect(r.x - 6, r.y + r.h + 4, r.w + 12, 6);
+}
+function drawTank(){
+  const tw = Math.min(150, W * 0.12), th = Math.min(220, H * 0.3), x = W - tw - 30, y = H - th - 190;
+  const lvl = Math.min(1, liters / META);
+  g.fillStyle = 'rgba(255,255,255,.06)'; g.strokeStyle = 'rgba(244,239,230,.6)'; g.lineWidth = 2;
+  g.beginPath(); g.roundRect(x, y, tw, th, 10); g.fill(); g.stroke();
+  const wh = (th - 8) * lvl;
+  const grd = g.createLinearGradient(0, y + th - wh, 0, y + th); grd.addColorStop(0, '#6fd3ff'); grd.addColorStop(1, '#1d79b8');
+  g.fillStyle = grd; g.beginPath(); g.roundRect(x + 4, y + th - 4 - wh, tw - 8, wh, 7); g.fill();
+  g.fillStyle = '#f4efe6'; g.font = '600 11px Inter'; g.textAlign = 'center';
+  g.fillText('ESTANQUE DE CHUNGUNGO', x + tw / 2, y - 10); g.textAlign = 'left';
+  return { x, y, tw, th };
+}
+
+function loop(now){
+  const dt = Math.min(50, now - (last || now)); last = now;
+  trackHand(now);
+  if (!landmarker && mouse.x !== null){ net.tx = mouse.x; net.ty = mouse.y; net.seen = true; }
+  if (landmarker && now - lastHand > 600) net.seen = false;
+  net.tx = Math.max(0.12, Math.min(0.82, net.tx)); net.ty = Math.max(0.2, Math.min(0.7, net.ty));
+  net.x += (net.tx - net.x) * 0.25; net.y += (net.ty - net.y) * 0.25;
+  $('hint').style.opacity = net.seen || done ? 0 : 1;
+
+  hills();
+  if (running && !done && Math.random() < 0.42) spawnFog();
+
+  const r = netRect();
+  // niebla
+  for (const f of fog){
+    f.x += f.vx * dt / 16; f.y += f.vy + Math.sin(now / 700 + f.ph) * 0.2;
+    if (net.seen && !done && f.x + f.r * 0.3 > r.x && f.x - f.r * 0.3 < r.x + r.w && f.y > r.y && f.y < r.y + r.h){
+      f.dead = true; liters += 30;
+      drops.push({ x: f.x, y: f.y, vy: 0.5 });
+      if (Math.random() < 0.5) plink();
+    }
+    if (f.x - f.r > W) f.dead = true;
+    const grd = g.createRadialGradient(f.x, f.y, 0, f.x, f.y, f.r);
+    grd.addColorStop(0, `rgba(235,240,245,${f.a})`); grd.addColorStop(1, 'rgba(235,240,245,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(f.x, f.y, f.r, 0, 7); g.fill();
+  }
+  fog = fog.filter(f => !f.dead);
+
+  drawNet(now);
+  const tank = drawTank();
+
+  // gotas: caen a la canaleta y luego viajan al estanque
+  for (const d of drops){
+    if (!d.pipe){ d.vy += 0.25; d.y += d.vy; if (d.y >= r.y + r.h + 6){ d.y = r.y + r.h + 6; d.pipe = true; } }
+    else { const tx = tank.x + tank.tw / 2, ty = tank.y + 10; d.x += (tx - d.x) * 0.06; d.y += (ty - d.y) * 0.06; if (Math.hypot(tx - d.x, ty - d.y) < 8) d.dead = true; }
+    g.fillStyle = '#6fd3ff'; g.beginPath(); g.ellipse(d.x, d.y, 2.6, 3.6, 0, 0, 7); g.fill();
+  }
+  drops = drops.filter(d => !d.dead);
+
+  // contador y relato
+  shown += (liters - shown) * 0.15;
+  $('liters').textContent = Math.round(shown).toLocaleString('es-CL') + ' L';
+  const prog = liters / META;
+  let idx = 0; STORY.forEach((s, i) => { if (prog >= s.at) idx = i; });
+  if (running) showStory(idx);
+  if (!done && prog >= 1){ done = true; chime(); if (windGain) windGain.gain.setTargetAtTime(0.08, actx.currentTime, 1); }
+
+  if (done){
+    g.fillStyle = 'rgba(111,211,255,.08)'; g.fillRect(0, 0, W, H);
+    g.fillStyle = '#f4efe6'; g.font = '600 13px Inter'; g.textAlign = 'center';
+    g.fillText('Presiona R o haz clic para volver a empezar', W / 2, 60); g.textAlign = 'left';
+  }
+  requestAnimationFrame(loop);
+}
+
+function restart(){ liters = 0; shown = 0; done = false; fog = []; drops = []; storyIdx = -1; if (windGain) windGain.gain.value = 0.25; }
+addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r') restart(); });
+addEventListener('click', () => { if (done) restart(); });
+
+$('go').onclick = async () => {
+  $('go').disabled = true; $('status').textContent = 'Cargando detector de manos…';
+  startAudio();
+  try { await startHands(); $('status').textContent = ''; }
+  catch (e){ console.warn(e); landmarker = null; $('cam').style.display = $('camLabel').style.display = 'none'; $('hint').textContent = 'Sin cámara: mueve el mouse para mover la malla'; }
+  $('start').style.display = 'none'; running = true;
+};
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
