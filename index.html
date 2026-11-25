@@ -45,6 +45,20 @@
   button:hover{filter:brightness(1.08)}
   #status{margin-top:14px;font-size:13px;color:var(--dim);min-height:18px}
   .hint{position:fixed;left:50%;top:22px;transform:translateX(-50%);font-size:13px;color:var(--dim);background:rgba(10,18,28,.6);padding:8px 14px;border-radius:999px;border:1px solid rgba(255,255,255,.1)}
+
+  /* Puntos de avance del relato */
+  #story .dots{display:flex;gap:6px;margin-top:12px}
+  #story .dots span{width:22px;height:4px;border-radius:2px;background:rgba(255,255,255,.18);transition:background .4s}
+  #story .dots span.on{background:var(--water)}
+  #hud .time{display:block;margin-top:10px;font-size:13px;letter-spacing:.1em;color:var(--ink);font-variant-numeric:tabular-nums}
+
+  /* Tarjeta final */
+  #end{position:fixed;left:50%;top:50%;transform:translate(-50%,-60%);z-index:4;text-align:center;background:rgba(10,18,28,.82);backdrop-filter:blur(10px);border:1px solid rgba(111,211,255,.35);border-radius:20px;padding:28px 36px;min-width:320px;transition:opacity .6s ease, transform .6s ease}
+  #end.hide{opacity:0;pointer-events:none;transform:translate(-50%,-55%)}
+  #end p.k{font-size:12px;letter-spacing:.24em;color:var(--water);font-weight:600;margin:0 0 10px}
+  #end h2{font-family:'Fraunces',serif;font-weight:800;font-size:40px;margin:0 0 10px;line-height:1}
+  #end p{color:var(--dim);font-size:15px;line-height:1.6;margin:0 0 20px}
+  #end b{color:var(--ink)}
 </style>
 </head>
 <body>
@@ -52,10 +66,12 @@
 <video id="video" playsinline muted></video>
 
 <div id="title"><p>HECHO EN CHILE · CHILE RE-DESCUBRE</p><h1>Atrapa la Camanchaca</h1></div>
-<div id="hud"><div id="liters">0 L</div><small>DE AGUA DE NIEBLA</small></div>
+<div id="hud"><div id="liters">0 L</div><small>DE AGUA DE NIEBLA</small><span class="time" id="timer">0:00</span></div>
 <div class="hint" id="hint">Levanta tu mano abierta frente a la cámara</div>
 
-<div id="story" class="hide"><div class="k" id="sk"></div><h2 id="sh"></h2><p id="sp"></p></div>
+<div id="story" class="hide"><div class="k" id="sk"></div><h2 id="sh"></h2><p id="sp"></p><div class="dots" id="dots"></div></div>
+
+<div id="end" class="hide"><p class="k">¡ESTANQUE LLENO!</p><h2>15.000 litros</h2><p id="endTxt"></p><button id="again">Jugar de nuevo</button></div>
 
 <canvas id="cam" width="200" height="150"></canvas>
 <div id="camLabel">TU MANO</div>
@@ -100,15 +116,23 @@ function showStory(i){
   if (i === storyIdx) return; storyIdx = i;
   const s = STORY[i], box = $('story');
   box.classList.add('hide');
-  setTimeout(() => { $('sk').textContent = s.k; $('sh').textContent = s.h; $('sp').textContent = s.p; box.classList.remove('hide'); }, 350);
+  setTimeout(() => { $('sk').textContent = s.k; $('sh').textContent = s.h; $('sp').textContent = s.p;
+    $('dots').innerHTML = STORY.map((_, j) => `<span class="${j <= i ? 'on' : ''}"></span>`).join('');
+    box.classList.remove('hide'); }, 350);
 }
 
 /* ---------- Estado ---------- */
-const net = { x: 0.62, y: 0.42, w: 0.2, h: 0.26, tx: 0.62, ty: 0.42, seen: false };
-let fog = [], drops = [], splashes = [];
-let liters = 0, shown = 0, done = false, running = false, last = 0, lastHand = 0;
+const net = { x: 0.62, y: 0.42, w: 0.2, tw: 0.2, tx: 0.62, ty: 0.42, seen: false };
+let fog = [], drops = [], pops = [];
+let liters = 0, shown = 0, done = false, running = false, last = 0, lastHand = 0, lastPop = 0;
+let t0 = 0, tFinal = 0;
 const mouse = { x: null, y: null };
 addEventListener('pointermove', e => { mouse.x = e.clientX / W; mouse.y = e.clientY / H; });
+
+// récord guardado en el navegador
+function getRecord(){ try { return parseFloat(localStorage.getItem('camanchaca_record')) || 0; } catch(e){ return 0; } }
+function setRecord(v){ try { localStorage.setItem('camanchaca_record', v); } catch(e){} }
+function fmt(sec){ const m = Math.floor(sec / 60), s = Math.floor(sec % 60); return m + ':' + String(s).padStart(2, '0'); }
 
 /* ---------- Audio: viento + gotas ---------- */
 let actx, wind, windGain;
@@ -144,10 +168,13 @@ let landmarker = null;
 async function startHands(){
   const { FilesetResolver, HandLandmarker } = await import(MP);
   const files = await FilesetResolver.forVisionTasks(MP + "/wasm");
-  landmarker = await HandLandmarker.createFromOptions(files, {
-    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: "GPU" },
+  const opts = d => ({
+    baseOptions: { modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task", delegate: d },
     runningMode: "VIDEO", numHands: 1
   });
+  // si la tarjeta de video falla, se usa el procesador
+  try { landmarker = await HandLandmarker.createFromOptions(files, opts("GPU")); }
+  catch (e){ landmarker = await HandLandmarker.createFromOptions(files, opts("CPU")); }
   const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 640, height: 480, facingMode: 'user' } });
   video.srcObject = stream; await video.play();
 }
@@ -166,6 +193,9 @@ function trackHand(now){
     const ids = [0, 5, 9, 13, 17]; let cx = 0, cy = 0;
     ids.forEach(i => { cx += lm[i].x; cy += lm[i].y; }); cx /= ids.length; cy /= ids.length;
     net.tx = 1 - cx; net.ty = cy; net.seen = true; lastHand = now;
+    // tamaño de la mano: si la acercas, la malla crece
+    const largo = Math.hypot(lm[0].x - lm[9].x, lm[0].y - lm[9].y);
+    net.tw = Math.max(0.14, Math.min(0.3, largo * 1.1));
     // dibujar esqueleto en la vista previa
     gc.strokeStyle = '#6fd3ff'; gc.lineWidth = 2;
     HAND_LINKS.forEach(([a, b]) => { gc.beginPath(); gc.moveTo((1 - lm[a].x) * cam.width, lm[a].y * cam.height); gc.lineTo((1 - lm[b].x) * cam.width, lm[b].y * cam.height); gc.stroke(); });
@@ -178,15 +208,25 @@ function spawnFog(){
   const r = 18 + Math.random() * 34;
   fog.push({ x: -r, y: H * (0.18 + Math.random() * 0.55), r, vx: 0.6 + Math.random() * 1.1, vy: (Math.random() - 0.5) * 0.15, a: 0.10 + Math.random() * 0.14, ph: Math.random() * 6 });
 }
-function hills(){
+function hills(now){
   // cielo
   const sky = g.createLinearGradient(0, 0, 0, H);
   sky.addColorStop(0, '#0d1a2b'); sky.addColorStop(0.55, '#1f3346'); sky.addColorStop(1, '#3b3a3a');
   g.fillStyle = sky; g.fillRect(0, 0, W, H);
+  // niebla lejana de fondo (solo decorativa)
+  for (let i = 0; i < 4; i++){
+    const x = ((now / 60 * (0.3 + i * 0.12) + i * 400) % (W + 600)) - 300, y = H * (0.25 + i * 0.1);
+    const grd = g.createRadialGradient(x, y, 0, x, y, 300);
+    grd.addColorStop(0, 'rgba(200,215,230,.035)'); grd.addColorStop(1, 'rgba(200,215,230,0)');
+    g.fillStyle = grd; g.beginPath(); g.ellipse(x, y, 300, 90, 0, 0, 7); g.fill();
+  }
   // mar a la izquierda
   g.fillStyle = '#123247'; g.beginPath(); g.moveTo(0, H * 0.74); g.lineTo(W * 0.3, H * 0.74); g.lineTo(W * 0.3, H); g.lineTo(0, H); g.fill();
   g.strokeStyle = 'rgba(111,211,255,.15)'; g.lineWidth = 1;
-  for (let i = 0; i < 5; i++){ g.beginPath(); g.moveTo(0, H * (0.77 + i * 0.045)); g.lineTo(W * 0.28, H * (0.77 + i * 0.045)); g.stroke(); }
+  for (let i = 0; i < 5; i++){
+    const off = Math.sin(now / 900 + i) * 8;
+    g.beginPath(); g.moveTo(off, H * (0.77 + i * 0.045)); g.lineTo(W * 0.28 + off, H * (0.77 + i * 0.045)); g.stroke();
+  }
   // cerros del desierto
   g.fillStyle = '#5a3b24'; g.beginPath(); g.moveTo(W * 0.18, H);
   g.bezierCurveTo(W * 0.32, H * 0.62, W * 0.48, H * 0.66, W * 0.6, H * 0.7);
@@ -195,53 +235,97 @@ function hills(){
   g.bezierCurveTo(W * 0.42, H * 0.78, W * 0.62, H * 0.8, W * 0.78, H * 0.84);
   g.bezierCurveTo(W * 0.9, H * 0.86, W * 0.96, H * 0.8, W, H * 0.82); g.lineTo(W, H); g.fill();
 }
-function netRect(){ const w = W * net.w, h = H * net.h; return { x: W * net.x - w / 2, y: H * net.y - h / 2, w, h }; }
-function drawNet(t){
-  const r = netRect();
+function netRect(){ const w = W * net.w, h = w * 0.75; return { x: W * net.x - w / 2, y: H * net.y - h / 2, w, h }; }
+function drawNet(r, t){
   // postes
   g.strokeStyle = '#2b2b2b'; g.lineWidth = 6; g.lineCap = 'round';
   g.beginPath(); g.moveTo(r.x, r.y - 8); g.lineTo(r.x, r.y + r.h + 26); g.moveTo(r.x + r.w, r.y - 8); g.lineTo(r.x + r.w, r.y + r.h + 26); g.stroke();
   // malla Raschel
   g.fillStyle = net.seen ? 'rgba(25,40,52,.55)' : 'rgba(25,40,52,.35)'; g.fillRect(r.x, r.y, r.w, r.h);
-  g.strokeStyle = 'rgba(244,239,230,.35)'; g.lineWidth = 1;
+  g.strokeStyle = net.seen ? 'rgba(244,239,230,.4)' : 'rgba(244,239,230,.18)'; g.lineWidth = 1;
   const step = 9;
   for (let x = r.x; x <= r.x + r.w; x += step){ g.beginPath(); g.moveTo(x, r.y); g.lineTo(x + Math.sin(t / 900 + x) * 1.5, r.y + r.h); g.stroke(); }
   for (let y = r.y; y <= r.y + r.h; y += step){ g.beginPath(); g.moveTo(r.x, y); g.lineTo(r.x + r.w, y); g.stroke(); }
   // canaleta
   g.fillStyle = '#9aa3a8'; g.fillRect(r.x - 6, r.y + r.h + 4, r.w + 12, 6);
 }
-function drawTank(){
-  const tw = Math.min(150, W * 0.12), th = Math.min(220, H * 0.3), x = W - tw - 30, y = H - th - 190;
-  const lvl = Math.min(1, liters / META);
+function tankBox(){
+  const tw = Math.min(150, W * 0.12), th = Math.min(220, H * 0.3);
+  return { x: W - tw - 30, y: H - th - 190, tw, th };
+}
+// manguera: de la canaleta al estanque (curva)
+function hose(r, tank){
+  const a = { x: r.x + r.w + 8, y: r.y + r.h + 7 }, b = { x: tank.x + tank.tw / 2, y: tank.y - 2 };
+  const c = { x: (a.x + b.x) / 2, y: Math.max(a.y, b.y) + 40 };
+  return { a, b, c, at: s => ({ x: (1-s)*(1-s)*a.x + 2*(1-s)*s*c.x + s*s*b.x, y: (1-s)*(1-s)*a.y + 2*(1-s)*s*c.y + s*s*b.y }) };
+}
+function drawHose(h){
+  g.strokeStyle = 'rgba(154,163,168,.8)'; g.lineWidth = 5; g.lineCap = 'round';
+  g.beginPath(); g.moveTo(h.a.x, h.a.y); g.quadraticCurveTo(h.c.x, h.c.y, h.b.x, h.b.y); g.stroke();
+}
+function drawTank(tank, now){
+  const { x, y, tw, th } = tank, lvl = Math.min(1, shown / META);
   g.fillStyle = 'rgba(255,255,255,.06)'; g.strokeStyle = 'rgba(244,239,230,.6)'; g.lineWidth = 2;
   g.beginPath(); g.roundRect(x, y, tw, th, 10); g.fill(); g.stroke();
+  // agua con superficie que se mueve
   const wh = (th - 8) * lvl;
-  const grd = g.createLinearGradient(0, y + th - wh, 0, y + th); grd.addColorStop(0, '#6fd3ff'); grd.addColorStop(1, '#1d79b8');
-  g.fillStyle = grd; g.beginPath(); g.roundRect(x + 4, y + th - 4 - wh, tw - 8, wh, 7); g.fill();
+  if (wh > 1){
+    g.save(); g.beginPath(); g.roundRect(x + 4, y + 4, tw - 8, th - 8, 7); g.clip();
+    const top = y + th - 4 - wh;
+    const grd = g.createLinearGradient(0, top, 0, y + th); grd.addColorStop(0, '#6fd3ff'); grd.addColorStop(1, '#1d79b8');
+    g.fillStyle = grd; g.beginPath(); g.moveTo(x, y + th);
+    for (let i = 0; i <= 20; i++){ const px = x + tw * i / 20; g.lineTo(px, top + Math.sin(now / 300 + i * 0.8) * 3); }
+    g.lineTo(x + tw, y + th); g.fill(); g.restore();
+  }
+  // marcas cada 25 %
+  g.strokeStyle = 'rgba(244,239,230,.25)'; g.lineWidth = 1;
+  for (let i = 1; i < 4; i++){ const my = y + th - (th * i / 4); g.beginPath(); g.moveTo(x + tw - 14, my); g.lineTo(x + tw - 4, my); g.stroke(); }
   g.fillStyle = '#f4efe6'; g.font = '600 11px Inter'; g.textAlign = 'center';
-  g.fillText('ESTANQUE DE CHUNGUNGO', x + tw / 2, y - 10); g.textAlign = 'left';
-  return { x, y, tw, th };
+  g.fillText('ESTANQUE DE CHUNGUNGO', x + tw / 2, y - 10);
+  g.font = '600 18px Inter'; g.fillText(Math.round(lvl * 100) + '%', x + tw / 2, y + th / 2 + 6);
+  g.textAlign = 'left';
+}
+// casas de Chungungo: se encienden a medida que llega el agua
+const CASAS = 6;
+function drawHouses(now){
+  const lvl = Math.min(1, shown / META), lit = Math.floor(lvl * CASAS + 0.0001);
+  const gap = 46, base = H - 60, x0 = W - 250 - CASAS * gap;
+  for (let i = 0; i < CASAS; i++){
+    const x = x0 + i * gap, y = base - (i % 2) * 6;
+    g.fillStyle = '#b9a588'; g.fillRect(x, y - 24, 34, 24);
+    g.fillStyle = '#7a3b2a'; g.beginPath(); g.moveTo(x - 4, y - 24); g.lineTo(x + 17, y - 40); g.lineTo(x + 38, y - 24); g.fill();
+    const on = i < lit;
+    if (on){ g.fillStyle = 'rgba(255,211,107,.25)'; g.beginPath(); g.arc(x + 17, y - 13, 14 + Math.sin(now / 400 + i) * 1.5, 0, 7); g.fill(); }
+    g.fillStyle = on ? '#ffd36b' : '#2a2a2a'; g.fillRect(x + 12, y - 18, 10, 9);
+  }
+  g.fillStyle = '#f4efe6'; g.font = '600 11px Inter';
+  g.fillText('CASAS CON AGUA: ' + lit + ' / ' + CASAS, x0, base + 18);
 }
 
 function loop(now){
   const dt = Math.min(50, now - (last || now)); last = now;
+  const k = dt / 16;
   trackHand(now);
   if (!landmarker && mouse.x !== null){ net.tx = mouse.x; net.ty = mouse.y; net.seen = true; }
   if (landmarker && now - lastHand > 600) net.seen = false;
-  net.tx = Math.max(0.12, Math.min(0.82, net.tx)); net.ty = Math.max(0.2, Math.min(0.7, net.ty));
-  net.x += (net.tx - net.x) * 0.25; net.y += (net.ty - net.y) * 0.25;
-  $('hint').style.opacity = net.seen || done ? 0 : 1;
+  net.tx = Math.max(0.12, Math.min(0.78, net.tx)); net.ty = Math.max(0.22, Math.min(0.66, net.ty));
+  net.x += (net.tx - net.x) * 0.25; net.y += (net.ty - net.y) * 0.25; net.w += (net.tw - net.w) * 0.1;
+  $('hint').style.opacity = !running || net.seen || done ? 0 : 1;
 
-  hills();
-  if (running && !done && Math.random() < 0.42) spawnFog();
+  hills(now);
+  // la niebla llega en oleadas: a ratos más espesa
+  const ola = 0.25 + 0.35 * (0.5 + 0.5 * Math.sin(now / 3000));
+  if (running && !done && Math.random() < ola * k) spawnFog();
 
-  const r = netRect();
+  const r = netRect(), tank = tankBox(), h = hose(r, tank);
   // niebla
   for (const f of fog){
-    f.x += f.vx * dt / 16; f.y += f.vy + Math.sin(now / 700 + f.ph) * 0.2;
+    f.x += f.vx * k; f.y += f.vy + Math.sin(now / 700 + f.ph) * 0.2;
     if (net.seen && !done && f.x + f.r * 0.3 > r.x && f.x - f.r * 0.3 < r.x + r.w && f.y > r.y && f.y < r.y + r.h){
-      f.dead = true; liters += 30;
-      drops.push({ x: f.x, y: f.y, vy: 0.5 });
+      f.dead = true; liters = Math.min(META, liters + 20);
+      // la gota queda pegada en la malla (posición relativa a la malla)
+      drops.push({ st: 'malla', u: (f.x - r.x) / r.w, v: (f.y - r.y) / r.h, sp: 0.002 + Math.random() * 0.003 });
+      if (now - lastPop > 180){ pops.push({ x: f.x, y: f.y, a: 1 }); lastPop = now; }
       if (Math.random() < 0.5) plink();
     }
     if (f.x - f.r > W) f.dead = true;
@@ -251,43 +335,73 @@ function loop(now){
   }
   fog = fog.filter(f => !f.dead);
 
-  drawNet(now);
-  const tank = drawTank();
+  drawHose(h);
+  drawNet(r, now);
+  drawHouses(now);
+  drawTank(tank, now);
 
-  // gotas: caen a la canaleta y luego viajan al estanque
+  // gotas: resbalan por la malla, corren por la canaleta y bajan por la manguera
+  g.fillStyle = '#6fd3ff';
   for (const d of drops){
-    if (!d.pipe){ d.vy += 0.25; d.y += d.vy; if (d.y >= r.y + r.h + 6){ d.y = r.y + r.h + 6; d.pipe = true; } }
-    else { const tx = tank.x + tank.tw / 2, ty = tank.y + 10; d.x += (tx - d.x) * 0.06; d.y += (ty - d.y) * 0.06; if (Math.hypot(tx - d.x, ty - d.y) < 8) d.dead = true; }
-    g.fillStyle = '#6fd3ff'; g.beginPath(); g.ellipse(d.x, d.y, 2.6, 3.6, 0, 0, 7); g.fill();
+    let x, y;
+    if (d.st === 'malla'){
+      d.sp += 0.0003 * k; d.v += d.sp * k;
+      x = r.x + d.u * r.w; y = r.y + d.v * r.h;
+      if (d.v >= 1){ d.st = 'canaleta'; d.gx = d.u * r.w; }
+    } else if (d.st === 'canaleta'){
+      d.gx += 6 * k; x = r.x + d.gx; y = r.y + r.h + 7;
+      if (d.gx >= r.w + 8){ d.st = 'manguera'; d.s = 0; }
+    } else {
+      d.s += 0.025 * k; const p = h.at(Math.min(1, d.s)); x = p.x; y = p.y;
+      if (d.s >= 1) d.dead = true;
+    }
+    g.beginPath(); g.ellipse(x, y, 2.6, 3.6, 0, 0, 7); g.fill();
   }
   drops = drops.filter(d => !d.dead);
 
-  // contador y relato
+  // textos "+20 L" que suben y se desvanecen
+  g.font = '600 14px Inter'; g.textAlign = 'center';
+  for (const p of pops){ p.y -= 0.6 * k; p.a -= 0.02 * k; g.fillStyle = `rgba(111,211,255,${Math.max(0, p.a)})`; g.fillText('+20 L', p.x, p.y); }
+  g.textAlign = 'left';
+  pops = pops.filter(p => p.a > 0);
+
+  // contador, tiempo y relato
   shown += (liters - shown) * 0.15;
   $('liters').textContent = Math.round(shown).toLocaleString('es-CL') + ' L';
+  if (running && !done) $('timer').textContent = 'TIEMPO ' + fmt((now - t0) / 1000);
   const prog = liters / META;
   let idx = 0; STORY.forEach((s, i) => { if (prog >= s.at) idx = i; });
   if (running) showStory(idx);
-  if (!done && prog >= 1){ done = true; chime(); if (windGain) windGain.gain.setTargetAtTime(0.08, actx.currentTime, 1); }
+  if (!done && prog >= 1) terminar(now);
 
-  if (done){
-    g.fillStyle = 'rgba(111,211,255,.08)'; g.fillRect(0, 0, W, H);
-    g.fillStyle = '#f4efe6'; g.font = '600 13px Inter'; g.textAlign = 'center';
-    g.fillText('Presiona R o haz clic para volver a empezar', W / 2, 60); g.textAlign = 'left';
-  }
   requestAnimationFrame(loop);
 }
 
-function restart(){ liters = 0; shown = 0; done = false; fog = []; drops = []; storyIdx = -1; if (windGain) windGain.gain.value = 0.25; }
-addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r') restart(); });
-addEventListener('click', () => { if (done) restart(); });
+function terminar(now){
+  done = true; chime();
+  if (windGain) windGain.gain.setTargetAtTime(0.08, actx.currentTime, 1);
+  tFinal = (now - t0) / 1000;
+  const rec = getRecord(), nuevo = !rec || tFinal < rec;
+  if (nuevo) setRecord(tFinal);
+  $('endTxt').innerHTML = `Llenaste el estanque en <b>${fmt(tFinal)}</b>.<br>` +
+    (nuevo ? '¡Nuevo récord!' : `Récord: <b>${fmt(rec)}</b>`) +
+    `<br>Chungungo recibía esta agua cada día gracias a la niebla.`;
+  setTimeout(() => $('end').classList.remove('hide'), 1200);
+}
+function restart(){
+  liters = 0; shown = 0; done = false; fog = []; drops = []; pops = []; storyIdx = -1;
+  t0 = performance.now(); $('end').classList.add('hide');
+  if (windGain) windGain.gain.value = 0.25;
+}
+addEventListener('keydown', e => { if (e.key.toLowerCase() === 'r' && running) restart(); });
+$('again').onclick = restart;
 
 $('go').onclick = async () => {
   $('go').disabled = true; $('status').textContent = 'Cargando detector de manos…';
   startAudio();
   try { await startHands(); $('status').textContent = ''; }
   catch (e){ console.warn(e); landmarker = null; $('cam').style.display = $('camLabel').style.display = 'none'; $('hint').textContent = 'Sin cámara: mueve el mouse para mover la malla'; }
-  $('start').style.display = 'none'; running = true;
+  $('start').style.display = 'none'; running = true; t0 = performance.now();
 };
 requestAnimationFrame(loop);
 </script>
