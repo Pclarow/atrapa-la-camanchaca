@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atrapa la Camanchaca · Presentación · Pedro Claro</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  /* Presentación de 4 láminas. Flechas o clic para avanzar. */
+  *{box-sizing:border-box;margin:0}
+  html,body{height:100%;background:#111;overflow:hidden;font-family:'Inter',Arial,sans-serif}
+  #deck{position:absolute;left:50%;top:50%;width:1920px;height:1080px;transform-origin:center}
+  .slide{position:absolute;inset:0;padding:110px 128px;display:none;flex-direction:column;background:#FAF8F3;color:#222}
+  .slide.on{display:flex}
+  .alt{background:#EFEBE3}.dark{background:#1E1F24;color:#EEE}
+  .tag{font-size:24px;font-weight:600;color:#2A6F97;margin-bottom:12px}.dark .tag{color:#8CC8EA}
+  h1{font-size:110px;line-height:1}h2{font-size:56px;margin-bottom:36px}h3{font-size:30px;margin-bottom:6px}
+  .lede{font-size:36px;color:#444;margin:24px 0 48px}.meta{font-size:26px;line-height:1.5;color:#444}
+  .body{font-size:30px;line-height:1.4;color:#333;margin-bottom:20px}.dark .body{color:#D0D0D0}
+  .desc{font-size:24px;line-height:1.4;color:#444;margin-bottom:20px}
+  .row{display:flex;gap:72px;align-items:flex-start}.col{flex:1;display:flex;flex-direction:column}
+  .cover{flex-direction:row;align-items:center;gap:72px}
+  .frame{width:900px;height:506px;border:0;border-radius:12px;background:#0d1622;flex:none}
+  .nums{display:flex;gap:64px;margin-top:auto}.num{flex:1}
+  .big{font-size:72px;font-weight:700;color:#2A6F97}
+  a{color:#8CC8EA}.dark b{color:#EEE}
+  .fuentes{font-size:22px;line-height:1.45;color:#B8B8B8;margin-top:auto}
+  #nav{position:fixed;right:18px;bottom:14px;color:#888;font-size:14px}
+</style>
+</head>
+<body>
+<div id="deck">
+
+  <!-- 1. Portada: el juego en vivo al lado -->
+  <section class="slide cover on">
+    <div class="col">
+      <p class="tag">Unidad 3 · Interfaces gráficas</p>
+      <h1>Atrapa la Camanchaca</h1>
+      <p class="lede">Una experiencia web donde tu mano es un atrapanieblas</p>
+      <p class="meta">Pedro Claro<br>Taller de Diseño de Interfaces · UAI 2026<br>Concurso Chile Re-Descubre</p>
+    </div>
+    <iframe class="frame" src="index.html" title="Atrapa la Camanchaca" style="pointer-events:none" tabindex="-1"></iframe>
+  </section>
+
+  <!-- 2. El hito -->
+  <section class="slide alt">
+    <p class="tag">El hito elegido</p>
+    <h2>El atrapanieblas, un invento chileno</h2>
+    <p class="body">En el desierto de Atacama casi no llueve, pero desde el mar llega la camanchaca: una niebla llena de gotitas de agua.</p>
+    <p class="body">En los años 60, en Antofagasta, el físico Carlos Espinosa Arancibia inventó una malla que atrapa esa niebla y la convierte en agua. Después donó la patente a la UNESCO.</p>
+    <div class="nums">
+      <div class="num"><p class="big">3 a 10 L</p><p class="desc">de agua al día por cada metro cuadrado de malla</p></div>
+      <div class="num"><p class="big">1992</p><p class="desc">Chungungo empieza a tener agua de niebla en las casas</p></div>
+      <div class="num"><p class="big">~15.000 L</p><p class="desc">al día llegaba a recibir el pueblo</p></div>
+    </div>
+  </section>
+
+  <!-- 3. Cómo funciona + video -->
+  <section class="slide">
+    <div class="row">
+      <div class="col">
+        <p class="tag">Cómo funciona</p>
+        <h2>Tu mano es la malla</h2>
+        <h3>1 · La cámara ve tu mano</h3><p class="desc">MediaPipe encuentra 21 puntos. La malla sigue el centro de la palma y crece si acercas la mano.</p>
+        <h3>2 · La niebla se vuelve agua</h3><p class="desc">Las gotas resbalan por la malla y bajan por una manguera al estanque de Chungungo.</p>
+        <h3>3 · Aparece la historia</h3><p class="desc">El relato sale en 5 partes y se iluminan las casas. Meta: 15.000 litros.</p>
+        <p class="desc" style="font-weight:600;color:#2A6F97">MediaPipe · Canvas 2D · Web Audio · GitHub Pages</p>
+      </div>
+      <iframe class="frame" src="https://www.youtube-nocookie.com/embed/foksx6VJ_vg" title="Video de Atrapa la Camanchaca" allow="autoplay; encrypted-media; fullscreen" allowfullscreen></iframe>
+    </div>
+  </section>
+
+  <!-- 4. Cierre -->
+  <section class="slide dark">
+    <p class="tag">Video y demo</p>
+    <h2>Pruébalo</h2>
+    <p class="body"><b>Juego:</b> <a href="index.html">pclarow.github.io/atrapa-la-camanchaca</a></p>
+    <p class="body"><b>Video:</b> <a href="https://youtu.be/foksx6VJ_vg" target="_blank">youtu.be/foksx6VJ_vg</a></p>
+    <p class="body"><b>Ejercicios de la unidad:</b> contador de dedos con MediaPipe, realidad aumentada con la mano y Meteoritos en Atacama en VR (<a href="https://github.com/Pclarow" target="_blank">github.com/Pclarow</a>)</p>
+    <p class="body" style="font-size:44px;font-weight:700;color:#EEE;margin-top:28px">Gracias</p>
+    <p class="fuentes">Fuentes: FAO · Centro del Desierto de Atacama UC, «Agua de Niebla» · El Desconcierto · Portal Frutícola · tesis UNAM sobre colectores de niebla · Hecho en Chile. 50 ideas, descubrimientos e innovaciones</p>
+  </section>
+
+</div>
+<div id="nav"></div>
+<script>
+  // escalar la lámina de 1920x1080 a la pantalla
+  const deck = document.getElementById('deck'), slides = [...document.querySelectorAll('.slide')];
+  function fit(){ const s = Math.min(innerWidth / 1920, innerHeight / 1080); deck.style.transform = `translate(-50%,-50%) scale(${s})`; }
+  addEventListener('resize', fit); fit();
+  // cambiar de lámina con flechas, espacio o clic
+  let i = 0;
+  function show(n){ i = Math.max(0, Math.min(slides.length - 1, n)); slides.forEach((s, k) => s.classList.toggle('on', k === i)); document.getElementById('nav').textContent = (i + 1) + ' / ' + slides.length; }
+  addEventListener('keydown', e => { if (['ArrowRight','ArrowDown',' ','PageDown'].includes(e.key)) show(i + 1); if (['ArrowLeft','ArrowUp','PageUp'].includes(e.key)) show(i - 1); if (e.key === 'f') document.documentElement.requestFullscreen(); });
+  addEventListener('click', e => { if (e.target.closest('a,iframe')) return; show(e.clientX > innerWidth / 3 ? i + 1 : i - 1); });
+  show(0);
+</script>
+</body>
+</html>

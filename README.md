@@ -5,8 +5,9 @@
 **Concurso:** Chile Re-Descubre (Congreso Futuro · ACHIPEC · CRTIC)
 **Hito elegido:** Atrapanieblas — *Hecho en Chile. 50 ideas, descubrimientos e innovaciones*
 
-▶️ **Probar en línea:** https://pclarow.github.io/atrapa-la-camanchaca/
-🎬 **Cápsula audiovisual:** [AGREGAR LINK DEL VIDEO]
+▶️ **Probar en línea:** https://pclarow.github.io/atrapa-la-camanchaca/  
+🎬 **Cápsula audiovisual:** https://youtu.be/foksx6VJ_vg  
+📊 **Presentación:** https://pclarow.github.io/atrapa-la-camanchaca/presentacion.html (flechas o clic para avanzar, F para pantalla completa)
 
 ---
 
@@ -22,7 +23,8 @@ En esta experiencia **la mano del visitante es la malla**. Al levantarla frente 
 2. Presionar **Comenzar** y aceptar el permiso de cámara.
 3. Levantar la **mano abierta** frente a la cámara: la malla sigue la palma.
 4. Moverla hacia la niebla para atraparla y llenar el estanque.
-5. Al terminar, presionar **R** o hacer clic para volver a empezar.
+5. Acercar la mano a la cámara hace la malla más grande.
+6. Al llenar el estanque aparece tu tiempo y tu récord; presionar **Jugar de nuevo** (o la tecla **R**) para volver a empezar.
 
 Sin cámara, la malla se mueve con el mouse.
 
